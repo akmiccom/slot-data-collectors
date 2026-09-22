@@ -20,6 +20,11 @@ def _integer(value: object, field: str, *, optional: bool = False) -> int | None
 def _date(value: object) -> date | None:
     if value in (None, ""):
         return None
+    # Actual XHR uses an eight-digit JSON integer, not only a string.
+    if type(value) is int:
+        if not 10000000 <= value <= 99999999:
+            raise MachineParseError("Invalid YMD_biz")
+        value = str(value)
     if isinstance(value, str):
         for fmt in ("%Y%m%d", "%Y-%m-%d", "%Y/%m/%d"):
             try:

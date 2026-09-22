@@ -81,12 +81,14 @@ class PscubeClient:
         """Return diagnostics even for HTTP 4xx/5xx; transport failures still raise."""
         return cast(FetchResult, self._request(url, inspect=True))
 
-    def fetch_json(self, url: str, *, params: dict[str, str | int]) -> JsonFetchResult:
-        return cast(JsonFetchResult, self._request(url, inspect=False, params=params, json_result=True))
+    def fetch_json(self, url: str, *, params: dict[str, str | int],
+                   headers: dict[str, str] | None = None) -> JsonFetchResult:
+        return cast(JsonFetchResult, self._request(url, inspect=False, params=params, json_result=True, headers=headers))
 
     def _request(self, url: str, *, inspect: bool,
                  params: dict[str, str | int] | None = None,
-                 json_result: bool = False) -> str | FetchResult | JsonFetchResult:
+                 json_result: bool = False,
+                 headers: dict[str, str] | None = None) -> str | FetchResult | JsonFetchResult:
         for attempt in range(self.max_retries + 1):
             if self._last_finished is not None:
                 delay = self.request_interval - (time.monotonic() - self._last_finished)
@@ -95,7 +97,7 @@ class PscubeClient:
             try:
                 with self.session.get(
                     url, timeout=self.timeout,
-                    headers={"User-Agent": self.user_agent},
+                    headers={"User-Agent": self.user_agent, **(headers or {})},
                     allow_redirects=True,
                     params=params,
                 ) as response:
@@ -119,10 +121,11 @@ class PscubeClient:
             except (requests.Timeout, requests.ConnectionError):
                 if attempt == self.max_retries:
                     raise FetchError("PScube connection failed") from None
-            except requests.RequestException:
+            except requests.RequestException as error:
                 # Do not retry HTTP errors, including 401, 403 and 429.
                 # Request exceptions may embed credentials; never propagate their text.
-                raise FetchError("PScube HTTP request failed") from None
+                status = error.response.status_code if error.response is not None else None
+                raise FetchError("PScube HTTP request failed", status_code=status) from None
             finally:
                 self._last_finished = time.monotonic()
             time.sleep(2 ** attempt)

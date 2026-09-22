@@ -26,6 +26,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     configure_logging()
     load_dotenv(ROOT / ".env")
+    stage = "configuration"
+
+    def set_stage(value: str) -> None:
+        nonlocal stage
+        stage = value
+
     try:
         host = urlsplit(args.url).hostname or "unknown"
         safe_host = re.sub(r"[^a-zA-Z0-9_-]", "_", host)[:100]
@@ -36,10 +42,14 @@ def main(argv: list[str] | None = None) -> int:
             directory.mkdir(parents=True, exist_ok=True)
             with (directory / f"{run}_{safe_host}_page{page}.json").open("x", encoding="utf-8") as stream:
                 json.dump(data, stream, ensure_ascii=False, indent=2)
+            logging.getLogger("slot_collectors.machines").info("machine_json_saved",
+                extra={"source": "pscube", "stage": "save_json", "status": "success"})
 
         with PscubeClient(timeout=float(os.getenv("REQUEST_TIMEOUT") or "15"),
                           request_interval=float(os.getenv("REQUEST_INTERVAL") or "1")) as client:
-            pages = list(PscubeCollector(client).iter_machine_pages(args.url, on_json=save if args.save_json else None))
+            pages = list(PscubeCollector(client).iter_machine_pages(
+                args.url, on_json=save if args.save_json else None, on_stage=set_stage))
+        stage = "report"
         first = pages[0]
         machines = [machine for page in pages for machine in page.machines]
         report = {"host": host, "business_date": first.business_date.isoformat() if first.business_date else None,
@@ -48,9 +58,10 @@ def main(argv: list[str] | None = None) -> int:
                                 "unit_numbers_count": len(m.unit_numbers)} for m in machines]}
         sys.stdout.write(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
         return 0
-    except (CollectorError, ValueError, OSError):
+    except (CollectorError, ValueError, OSError) as error:
         logging.getLogger("slot_collectors.machines").error("machine_collection_failed",
-            extra={"source": "pscube", "status": "failure"})
+            extra={"source": "pscube", "status": "failure", "stage": stage,
+                   "error_type": type(error).__name__, "status_code": getattr(error, "status_code", None)})
         return 1
 
 

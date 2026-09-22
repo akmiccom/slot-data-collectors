@@ -29,6 +29,8 @@ class CollectionFormatter(logging.Formatter):
             "final_host": getattr(record, "final_host", None),
             "status_code": getattr(record, "status_code", None),
             "response_size": getattr(record, "response_size", None),
+            "stage": getattr(record, "stage", None),
+            "error_type": getattr(record, "error_type", None),
         }, ensure_ascii=False)
 
 

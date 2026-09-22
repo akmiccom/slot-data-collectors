@@ -1,0 +1,17 @@
+{
+  "Location": {}, "YMD_biz": 20260922, "up_YMDhms": "20260922090000",
+  "Dai": {"cd_dai": "0272", "cd_dai_prev": "0271", "cd_dai_next": "0273"},
+  "Ki": {"cd_kisyu": "sample", "name": "テスト機種", "cd_ps": 2, "fg_new": 0, "bai": 21.74, "nm_ps": "slot"},
+  "Data": [
+    null,
+    {"title": "BIG", "item": [0, 38, 30, 31, false, false, false]},
+    {"title": "REG", "item": [1, 25, 20, 25, false, false, false]},
+    null,
+    {"title": "BIG確率", "item": [false, "1/193.5", 217, "247"]},
+    {"title": "REG確率", "item": ["1/295", "1/294.1", 325.5, 306.2]},
+    {"title": "合成確率", "item": [295, 116.7, 130.2, 136.7]},
+    {"title": "最大出玉", "item": [105, 3715, 1488, 1324]}
+  ],
+  "Graph": [{"YMD_biz": 20260921, "title": "1日前", "src": "/synthetic-graph.png", "legend": ["sample"]}],
+  "GraphType": "img", "Hist": [], "HistCount": 0, "page": 1, "pageMax": 1
+}

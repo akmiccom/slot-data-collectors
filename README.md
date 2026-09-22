@@ -4,7 +4,7 @@
 
 現在は初期構築段階で、PScubeのHTTP取得と共通モデルを実装しています。
 
-PScubeの機種一覧JSON取得・解析を実装しています。個別台HTMLの解析・SlotResultへの標準化とREITOの収集処理は未実装で、呼び出すと明示的に例外になります。
+PScubeの機種一覧・個別台JSON取得と解析、確率からの回転数推定を実装しています。台データのHTML解析・SlotResultへの標準化とREITOの収集処理は未実装で、呼び出すと明示的に例外になります。
 
 本番HTMLの構造やセレクタは推測していません。
 
@@ -38,6 +38,7 @@ jobs/
   collect_pscube.py         # 通信しない設定・実装状態の確認用エントリーポイント
   inspect_pscube.py         # URLを1つ受け取る取得検証CLI
   inspect_pscube_machines.py # 機種一覧JSONの取得・検証CLI
+  inspect_pscube_unit.py     # 個別台1台・4日分のJSONと回転数推定
 tests/
   __init__.py
   conftest.py              # テスト中の実HTTP通信を禁止
@@ -45,6 +46,7 @@ tests/
   test_collectors.py
   test_inspection.py
   test_machines.py
+  test_unit.py
   fixtures/               # 機密情報を除いたHTML fixtureの保存先
 .env.example
 .gitignore
@@ -213,7 +215,8 @@ CLIは同じ`iter_machine_pages()`を使いページ情報も表示します。
 | mph | machine_path（取得しません） |
 
 実装上の受け入れ規則（実レスポンス全パターンの確認済み仕様ではありません）：
-日付はYYYYMMDD / YYYY-MM-DD / YYYY/MM/DDを許容し、空はNone。
+保存済み実JSONで`YMD_biz`が8桁の整数（例：20260922）になることを確認し、対応しています。
+文字列のYYYYMMDD / YYYY-MM-DD / YYYY/MM/DDも許容し、空はNone。
 機種名とlist.cd_dai、トップレベルのKi/count/page/pageMaxは必須です。
 その他のモデル項目は欠損をNoneとし、未知フィールド（PS/fg_new/mcd_kisyu/nm_ka/DIVA等）は変換しません。
 数値項目は数値文字列も許容しますが、台番号を数値から補完することはしません。
@@ -222,9 +225,71 @@ CLIは同じ`iter_machine_pages()`を使いページ情報も表示します。
 
 `--save-json`は各取得ページを`debug/pscube/`へUTC時刻・ランダム識別子・host・ページ番号で保存します。
 ヘッダーやCookieは保存しません。JSON本文は未加工のため、共有前に内容を確認してください。
-失敗時に、それまで成功したページの保存ファイルが残る場合があります。
+JSONは機種情報の解析前に保存するため、解析に失敗したページも調査できます。
+JSON decode自体に失敗した応答は保存されません。失敗ログの`stage`と`error_type`で
+設定・URL検証・初期ページ取得・XHR取得・保存・解析を区別し、HTTPエラー時はstatusも表示します。
+例外本文やレスポンス本文はログに出しません。途中失敗でも保存済みファイルは残ります。
 テスト用JSONは確認された構造を模した架空データです。実サイトにはテストからアクセスしません。
-個別台データ取得・mph先・DBマッピングは未実装です。
+mph先・DBマッピングは未実装です。個別台取得は次のm06用CLIを使用します。
+
+## PScube個別台JSONと回転数推定
+
+```powershell
+python -m jobs.inspect_pscube_unit "https://yasudaya.pscube.jp/h/a744207/cgi-bin/nc-v06-001.php?cd_dai=0272" --save-json
+python -m jobs.inspect_pscube_unit --from-json "debug/pscube/保存した_unit.json"
+python -m jobs.inspect_pscube_unit --help
+```
+
+仮想環境を有効化していない場合は`python`を`.\.venv-check\Scripts\python.exe`に置き換えます。
+1回に1台だけ、個別台HTML→同じSessionでGET `nc-m06-001.php` の順に取得します。
+通常HTMLのインラインscriptから`api.apikey`、`api.token = JSON.parse(...)`、`.show(台番号, 営業日, ...)`を読み取り、
+`cd_dai / YMD_biz / apikey / _i / _t / page=1`を渡します。
+この限定した文字列形式だけを解析し、JavaScriptを実行しません。構造が未対応・欠損なら`UnitRequestUnsupported`で停止します。
+Cookieコピー・手動キー注入・CAPTCHA対応・アクセス制御回避はありません。
+通常SessionのCookie維持、REQUEST_TIMEOUT / REQUEST_INTERVALを利用します。
+履歴用page/pageMaxの巡回、他台の取得、Graph画像のダウンロードは行いません。
+
+確認済みの区分：m03は機種一覧・ページング・台番号一覧、m06は個別台のBIG/REG/各確率/最大出玉とGraph画像URLです。
+2026-09-22にa744207の0272について通常HTML→XHRの実取得を確認しました。
+実m06の`Data`には`null`の空行があり、これをスキップします。
+`Dai.cd_dai`は文字列のまま、`Ki.name / Ki.cd_kisyu`は機種名・コードとして保持します。
+`Data.title`で対応する行を選び、itemの先頭4個を営業日・1日前・2日前・3日前へ対応させます。
+false/null/空文字・短い配列の不足分はNone、ゼロ回は0として保持します。未知titleは無視し、重複titleや不正値はエラーです。
+確率は数値・数値文字列・`1/193.5`等を分母のfloatに変換します。0の確率は利用不能としてNoneとします。
+Graphは日付・title・src・legendを保持し、日付でdaily.graph_srcに対応させます。
+legendは現時点で元JSONの形のまま保持します。CLIにはURL本体を出さず、存在有無だけを表示します。
+
+回転数は直接値ではなく**推定値**です。BB×分母、RB×分母、(BB+RB)×合成分母のうち有効な組だけを使います。
+0回の項目は除外し、BB/RBどちらか欠損の場合は合成も除外します。すべて無効ならestimated_gameはNoneです。
+逆算平均をROUND_HALF_UPで整数化した中心の±20Gを探索し、各比率をDecimalのROUND_HALF_UPで小数1桁にした値が
+表示分母と一致する整数を候補として保存します。候補が複数なら平均に最も近い値（同距離は大きい値）、
+候補ゼロなら平均をROUND_HALF_UPで整数化します。spreadは有効な逆算値の最大−最小です。
+サイトの丸め方式がROUND_HALF_UPであること自体は未確認で、候補は探索範囲内の整合性を示します。実測gameと同一視しません。
+最大出玉は差枚ではなく、SlotResult.medalやgameへの自動転記はしません。
+
+実取得した0272の保存JSONの再解析結果（当日は途中経過）：
+
+| 営業日 | BIG | REG | 最大出玉 | estimated_game | 候補 | spread |
+| --- | ---: | ---: | ---: | ---: | --- | ---: |
+| 2026-09-22 | 0 | 1 | 105 | 309 | 309 | 0.0 |
+| 2026-09-21 | 38 | 25 | 3715 | 7353 | 7352, 7353 | 0.9 |
+| 2026-09-20 | 30 | 20 | 1488 | 6510 | 6509, 6510 | 0.0 |
+| 2026-09-19 | 31 | 25 | 1324 | 7656 | 7656 | 2.0 |
+
+`--save-json`は解析前のraw JSONだけをGit対象外のdebug/pscubeへ保存します。
+ファイル名はUTC時刻・ランダム識別子・host・unitという固定語から作り、キーやqueryは含めません。
+raw JSONのGraph src等に秘密値が含まれる可能性があるため、共有・fixture化前の確認が必要です。
+HTMLやリクエストのキー・Cookieは保存・ログ出力しません。エラー時はstage・例外型・HTTP statusのみを記録します。
+`--from-json`は外部通信せず再解析できます。
+
+追加ファイル：`unit_parser.py`（純粋なJSON解析）、`unit_request.py`（通常HTMLの設定抽出）、
+`estimation.py`（Decimal推定）、`jobs/inspect_pscube_unit.py`（CLI）、`tests/test_unit.py`と架空fixture。
+ユーザー所有の`tests/test_pscube.py`はimport時に実通信する手動検証用のため、pytest収集から除外します。
+同ファイルは変更・コミットしていません。pytestでは収集段階からHTTPを禁止しています。
+
+差枚はGraph画像からの推定候補ですが未実装です。次の調査では、許可された画像取得方法、縦軸の単位と目盛り、
+ゼロ線・終点・画像サイズ、営業日・台番号との対応、当日途中画像の更新、検証用の既知差枚を確認します。
+画像認識・OCR・DB保存・全台巡回は今回の対象外です。
 
 ## データソース追加と今後
 
