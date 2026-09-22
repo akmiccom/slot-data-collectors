@@ -6,7 +6,7 @@ import time
 from types import TracebackType
 from typing import cast
 import requests
-from common.exceptions import FetchError
+from common.exceptions import FetchError, JsonDecodeError
 from common.logging_config import safe_url
 
 
@@ -23,6 +23,16 @@ class FetchResult:
     html: str = field(repr=False)
     redirected: bool = False
     response_headers: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class JsonFetchResult:
+    requested_url: str
+    final_url: str
+    status_code: int
+    content_type: str
+    response_length: int
+    data: dict[str, object] = field(repr=False)
 
 
 def _inspection_result(url: str, response: requests.Response, session: requests.Session) -> FetchResult:
@@ -71,7 +81,12 @@ class PscubeClient:
         """Return diagnostics even for HTTP 4xx/5xx; transport failures still raise."""
         return cast(FetchResult, self._request(url, inspect=True))
 
-    def _request(self, url: str, *, inspect: bool) -> str | FetchResult:
+    def fetch_json(self, url: str, *, params: dict[str, str | int]) -> JsonFetchResult:
+        return cast(JsonFetchResult, self._request(url, inspect=False, params=params, json_result=True))
+
+    def _request(self, url: str, *, inspect: bool,
+                 params: dict[str, str | int] | None = None,
+                 json_result: bool = False) -> str | FetchResult | JsonFetchResult:
         for attempt in range(self.max_retries + 1):
             if self._last_finished is not None:
                 delay = self.request_interval - (time.monotonic() - self._last_finished)
@@ -82,10 +97,24 @@ class PscubeClient:
                     url, timeout=self.timeout,
                     headers={"User-Agent": self.user_agent},
                     allow_redirects=True,
+                    params=params,
                 ) as response:
                     if inspect:
                         return _inspection_result(url, response, self.session)
                     response.raise_for_status()
+                    if json_result:
+                        try:
+                            data = response.json()
+                        except ValueError:
+                            raise JsonDecodeError("PScube response is not valid JSON") from None
+                        if not isinstance(data, dict):
+                            raise JsonDecodeError("PScube JSON must be an object")
+                        media_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+                        return JsonFetchResult(
+                            safe_url(url), safe_url(response.url), response.status_code,
+                            "application/json" if media_type == "application/json" else "[other]",
+                            len(response.content), data,
+                        )
                     return response.text
             except (requests.Timeout, requests.ConnectionError):
                 if attempt == self.max_retries:

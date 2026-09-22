@@ -1,0 +1,9 @@
+{
+  "YMD_biz": "20260922", "PS": 2, "count": 2, "page": 1, "pageMax": 2,
+  "Ki": [{
+    "YMD_biz": "20260922", "nmk_kisyu": "テスト機種A", "cd_ps": "2",
+    "bai": "21.74", "ct_dai": "3", "fg_new": "0",
+    "list": {"cd_kisyu": "00123", "cd_dai": ["0272", "0273", "0274"]},
+    "mcd_kisyu": "sample", "mph": "sample-machine.php", "nm_ka": "", "DIVA": null
+  }]
+}

@@ -4,7 +4,7 @@
 
 現在は初期構築段階で、PScubeのHTTP取得と共通モデルを実装しています。
 
-PScubeの解析・標準化とREITOの収集処理は未実装で、呼び出すと明示的に例外になります。
+PScubeの機種一覧JSON取得・解析を実装しています。個別台HTMLの解析・SlotResultへの標準化とREITOの収集処理は未実装で、呼び出すと明示的に例外になります。
 
 本番HTMLの構造やセレクタは推測していません。
 
@@ -25,7 +25,7 @@ PScubeの解析・標準化とREITOの収集処理は未実装で、呼び出す
 ```text
 collectors/
   __init__.py
-  pscube/                  # client.py / parser.py / collector.py / inspect.py / __init__.py
+  pscube/                  # client.py / parser.py / collector.py / inspect.py / models.py / __init__.py
   reitoweb/                # 同じ構成の未実装の骨格
 common/
   __init__.py
@@ -37,12 +37,14 @@ jobs/
   __init__.py
   collect_pscube.py         # 通信しない設定・実装状態の確認用エントリーポイント
   inspect_pscube.py         # URLを1つ受け取る取得検証CLI
+  inspect_pscube_machines.py # 機種一覧JSONの取得・検証CLI
 tests/
   __init__.py
   conftest.py              # テスト中の実HTTP通信を禁止
   test_models.py
   test_collectors.py
   test_inspection.py
+  test_machines.py
   fixtures/               # 機密情報を除いたHTML fixtureの保存先
 .env.example
 .gitignore
@@ -172,6 +174,57 @@ titleも本文由来なので、JSONレポートを共有する前に確認し�
 実URLで次に確認する項目：HTTP statusと最終host、リダイレクト有無、Cookie名、
 title・承認語句・meta refresh・formの有無、保存HTMLの文字化けやデータ表示の有無。
 承認画面が出た場合はそこで観察に留め、このツールで操作しません。
+
+## PScube機種一覧XHR取得
+
+ユーザーが実通信で確認した仕様：GET `nc-m03-001.php`、Content-Typeは
+`application/json`。パラメータは`cd_ps=2`、`bai=0`、`YMD_biz=`、`page=1`、`loaded=`。
+トップレベルに`YMD_biz / PS / Ki / count / page / pageMax`があり、
+`Ki`が機種一覧、各機種の`list.cd_dai`が先頭ゼロ付き台番号一覧です。
+
+```powershell
+python -m jobs.inspect_pscube_machines "https://yasudaya.pscube.jp/h/a744207/cgi-bin/nc-v03-001.php?cd_ps=2"
+python -m jobs.inspect_pscube_machines "https://yasudaya.pscube.jp/h/a744207/cgi-bin/nc-v03-001.php?cd_ps=2" --save-json
+python -m jobs.inspect_pscube_machines --help
+```
+
+有効化していない場合は`python`を`.\.venv-check\Scripts\python.exe`等に置き換えてください。
+通常ページをGETしてから、同じSessionでXHRをpage=1からpageMaxまで逐次取得します。
+各呼び出し間は`REQUEST_INTERVAL`、timeoutは`REQUEST_TIMEOUT`を使用します。
+手動Cookie注入や認証回避は行いません。HTTPエラー、JSONでない応答、必須フィールド不正で停止します。
+出力はhost、営業日、サーバーのcount/pageMax、取得機種件数、各機種名・台数・台番号件数です。
+countの意味と実際の機種件数が一致するかは未検証のため、独立した値として表示します。
+
+`client.fetch_json()`はJSON decodeまで行い`JsonFetchResult`を返します。
+`parser.parse_machine_page()`は通信せず`PscubeMachinePage`へ変換し、
+`collector.collect_machines()`は`list[PscubeMachine]`を返します。
+CLIは同じ`iter_machine_pages()`を使いページ情報も表示します。
+`collectors/pscube/models.py`の対応：
+
+| 元JSON | Python |
+| --- | --- |
+| YMD_biz | business_date |
+| nmk_kisyu | machine_name |
+| cd_ps | cd_ps |
+| bai | rate |
+| ct_dai | unit_count |
+| list.cd_kisyu | machine_code |
+| list.cd_dai | unit_numbers（文字列のまま保持） |
+| mph | machine_path（取得しません） |
+
+実装上の受け入れ規則（実レスポンス全パターンの確認済み仕様ではありません）：
+日付はYYYYMMDD / YYYY-MM-DD / YYYY/MM/DDを許容し、空はNone。
+機種名とlist.cd_dai、トップレベルのKi/count/page/pageMaxは必須です。
+その他のモデル項目は欠損をNoneとし、未知フィールド（PS/fg_new/mcd_kisyu/nm_ka/DIVA等）は変換しません。
+数値項目は数値文字列も許容しますが、台番号を数値から補完することはしません。
+空一覧はcount=0、page=1、pageMax=0または1を許容します。
+要求と異なるpageや、途中で変わる営業日/count/pageMaxはエラーとします。
+
+`--save-json`は各取得ページを`debug/pscube/`へUTC時刻・ランダム識別子・host・ページ番号で保存します。
+ヘッダーやCookieは保存しません。JSON本文は未加工のため、共有前に内容を確認してください。
+失敗時に、それまで成功したページの保存ファイルが残る場合があります。
+テスト用JSONは確認された構造を模した架空データです。実サイトにはテストからアクセスしません。
+個別台データ取得・mph先・DBマッピングは未実装です。
 
 ## データソース追加と今後
 

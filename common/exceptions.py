@@ -9,6 +9,14 @@ class FetchError(CollectorError):
     """HTTP acquisition failed."""
 
 
+class JsonDecodeError(FetchError):
+    """Response was not a JSON object."""
+
+
+class MachineParseError(CollectorError):
+    """Machine response fields or pagination are invalid."""
+
+
 class ParserNotImplementedError(CollectorError, NotImplementedError):
     """Real source HTML is required before implementing the parser."""
 
