@@ -39,6 +39,7 @@ jobs/
   inspect_pscube.py         # URLを1つ受け取る取得検証CLI
   inspect_pscube_machines.py # 機種一覧JSONの取得・検証CLI
   inspect_pscube_unit.py     # 個別台1台・4日分のJSONと回転数推定
+  inspect_pscube_graph.py    # グラフ1枚の差枚推定・注釈画像
 tests/
   __init__.py
   conftest.py              # テスト中の実HTTP通信を禁止
@@ -47,6 +48,7 @@ tests/
   test_inspection.py
   test_machines.py
   test_unit.py
+  test_graph.py
   fixtures/               # 機密情報を除いたHTML fixtureの保存先
 .env.example
 .gitignore
@@ -287,9 +289,56 @@ HTMLやリクエストのキー・Cookieは保存・ログ出力しません。�
 ユーザー所有の`tests/test_pscube.py`はimport時に実通信する手動検証用のため、pytest収集から除外します。
 同ファイルは変更・コミットしていません。pytestでは収集段階からHTTPを禁止しています。
 
-差枚はGraph画像からの推定候補ですが未実装です。次の調査では、許可された画像取得方法、縦軸の単位と目盛り、
-ゼロ線・終点・画像サイズ、営業日・台番号との対応、当日途中画像の更新、検証用の既知差枚を確認します。
-画像認識・OCR・DB保存・全台巡回は今回の対象外です。
+個別台JSON用CLIは画像取得を行いません。画像による差枚推定は下記の検証用CLIを使用します。
+
+## グラフ画像による差枚推定（検証用）
+
+確認したm06 JSONには最終差枚の直接値がなく、Graph画像から推定します。
+gameは3確率の整合性から小さい候補範囲へ復元できる一方、medalは画素・軸設定・終点検出による誤差を持ちます。
+どちらも推定値で、本番運用・DB保存には使用していません。
+
+Pillowだけを追加しました。`python -m pip install -r requirements.txt`で更新してください。
+
+```powershell
+# 1台・1日だけ通常HTML→JSON→画像を同じSessionで取得
+python -m jobs.inspect_pscube_graph --unit 0272 --date 20260921 --unit-url "https://yasudaya.pscube.jp/h/a744207/cgi-bin/nc-v06-001.php?cd_dai=0272" --annotate
+# 保存済み画像を通信せず解析
+python -m jobs.inspect_pscube_graph --unit 0272 --date 20260921 --image "debug/pscube/graphs/20260921_0272.png" --annotate
+```
+
+通常ページのテンプレートで確認した`/h/<hall>/graph/{{>src}}`を使います。
+画像GETには通常ページのRefererを付けます。今回、Refererなしでは403、通常のReferer付きでは取得できました。
+Graph srcをCLIやログに表示しません。Cookieのコピー・認証回避・403再試行は行いません。
+古いJSONの期限等が不明なため、ネットワークモードでは同一Sessionで最新の個別台JSONを取得してから1枚だけ取得します。
+画像はPNGへ再保存し、`debug/pscube/graphs/YYYYMMDD_台番号.png`に保存します。同じ日・台の再取得は上書きします。
+店舗をファイル名に含めないため、別店舗の同じ台番号・日付では衝突します。今回は1店舗の検証用です。
+
+`collectors/pscube/graph.py`の`GraphProfile / GraphEstimate / fetch_graph / estimate_graph / annotate_graph`を追加しました。
+中央領域で長く続く灰色の水平線を検出し、隣接行を集約します。長い縦軸から左端、水平線の端から右端を検出します。
+plotの外側を上側・左側・下側のタイトル／軸ラベル領域として解析対象外にします（文字は認識しません）。
+水平線間隔のばらつき6%以内を確認し、上下グリッド全体の高さを間隔数で割ってstep_pxを求めます。
+ピンク系RGBの許容範囲で8近傍連結成分を抽出し、plot幅の15%以上にわたる成分だけを候補にします。
+単一成分の最右端列のY中央値を終点として、`(zero_y-end_y)/step_px*step_medal`をROUND_HALF_UPで整数化します。
+
+**軸の数値は幾何だけでは確定できません。** 初期プロファイルは上5000・下-1000・1000枚刻みの7本です。
+0ラインはこの前提で下から2本目とします。`--top-medal / --bottom-medal / --step-medal`で変更できます。
+軸ラベルや目視の+3200枚に合わせた自動補正は行いません。明るい主要線が想定ゼロ線と矛盾する場合は棄却します。
+全7本・安定間隔・単一連結線・終点が右側85%以上ならhigh、途中終了ならmedium。
+欠損グリッド・複数の大きい線成分・縦方向のクリップ等ではlowかつestimated_medal=Noneです。
+今回はグリッド補間を行いません。highは指定スケールが正しい前提での幾何検出の確からしさで、枚数精度の保証ではありません。
+
+`--annotate`はplot矩形（水色）、グリッド（橙）、0ライン（緑）、終点（赤）を
+`debug/pscube/graphs/annotated/YYYYMMDD_台番号.png`へ保存します。通常解析には不要です。
+終了コードは推定成功0、検出不能2、取得・設定・読み込み失敗1です。
+
+実画像検証：0272 / 2026-09-21、800×730、plot=(79,20,780,676)。
+grid Y=[20,129,238,348,457,567,676]、zero_y=567、step_px=109.3333、終点=(779,211)。
+estimated_medal=**+3256枚**、confidence=high（既定スケールの前提あり）。目視の約+3200枚と大きな乖離はありません。
+正解値は未提供のため、誤差率・絶対精度は未評価です。1pxが約9.15枚に相当します。
+
+外部画像をGitに入れず、テストではPillowで架空の正差枚・負差枚・ノイズ・欠損・異なる画像サイズを生成します。
+残課題は軸レンジ変更の識別、線切れ・別配色・複数線・途中経過・端でのクリップへの対応、複数実例と既知差枚による精度評価です。
+OCR・機械学習・一括取得・並列取得・Supabase保存は追加していません。
 
 ## データソース追加と今後
 

@@ -81,6 +81,9 @@ class PscubeClient:
         """Return diagnostics even for HTTP 4xx/5xx; transport failures still raise."""
         return cast(FetchResult, self._request(url, inspect=True))
 
+    def fetch_bytes(self, url: str, *, headers: dict[str, str] | None = None) -> bytes:
+        return cast(bytes, self._request(url, inspect=False, binary=True, headers=headers))
+
     def fetch_json(self, url: str, *, params: dict[str, str | int],
                    headers: dict[str, str] | None = None) -> JsonFetchResult:
         return cast(JsonFetchResult, self._request(url, inspect=False, params=params, json_result=True, headers=headers))
@@ -88,7 +91,7 @@ class PscubeClient:
     def _request(self, url: str, *, inspect: bool,
                  params: dict[str, str | int] | None = None,
                  json_result: bool = False,
-                 headers: dict[str, str] | None = None) -> str | FetchResult | JsonFetchResult:
+                 headers: dict[str, str] | None = None, binary: bool = False) -> str | bytes | FetchResult | JsonFetchResult:
         for attempt in range(self.max_retries + 1):
             if self._last_finished is not None:
                 delay = self.request_interval - (time.monotonic() - self._last_finished)
@@ -104,6 +107,8 @@ class PscubeClient:
                     if inspect:
                         return _inspection_result(url, response, self.session)
                     response.raise_for_status()
+                    if binary:
+                        return response.content
                     if json_result:
                         try:
                             data = response.json()
