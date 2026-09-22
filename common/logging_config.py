@@ -25,6 +25,10 @@ class CollectionFormatter(logging.Formatter):
             "url": getattr(record, "url", None),
             "status": getattr(record, "status", None),
             "count": getattr(record, "count", None),
+            "requested_host": getattr(record, "requested_host", None),
+            "final_host": getattr(record, "final_host", None),
+            "status_code": getattr(record, "status_code", None),
+            "response_size": getattr(record, "response_size", None),
         }, ensure_ascii=False)
 
 
