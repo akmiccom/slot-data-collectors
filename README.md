@@ -2,11 +2,11 @@
 
 パチスロ台データを複数のWebデータソースから取得・解析・標準化するPython基盤です。
 
-現在は初期構築段階で、PScubeのHTTP取得と共通モデルを実装しています。
+現在は **PScube の取得経路を実サイトで検証する段階まで進んでいます**。機種一覧XHR、個別台XHR、確率からの回転数推定、グラフ画像からの差枚推定プロトタイプを実装済みです。
 
-PScubeの機種一覧・個別台JSON取得と解析、確率からの回転数推定を実装しています。台データのHTML解析・SlotResultへの標準化とREITOの収集処理は未実装で、呼び出すと明示的に例外になります。
+2026-09-22 の実サイト検証では、1店舗について機種一覧 **41機種・110台** を全3ページから取得し、サーバーの `count=41` と一致することを確認しました。個別台では BIG / REG / 3種類の確率 / 最大出玉 / グラフ参照先を取得できています。
 
-本番HTMLの構造やセレクタは推測していません。
+PScube の `SlotResult` への最終標準化、複数台・複数店舗の本番収集、Supabase書き込み、REITO収集処理は未実装です。確認できていないHTML構造やセレクタは推測で実装しません。
 
 ## 役割分担
 
@@ -54,6 +54,7 @@ tests/
 .gitignore
 requirements.txt
 README.md
+AGENTS.md               # Codex/AI開発エージェント向け作業規約
 ```
 
 ## Collectorの設計
@@ -64,10 +65,10 @@ Web → client.fetch(url) → HTML → parser.parse(html)
 ```
 
 - clientはHTTPのみを担当します。`requests.Session`による通常のCookie維持とセッション注入に対応します。所有するセッションはコンテキストマネージャーで閉じ、注入したセッションは呼び出し元が管理します。
-- parserはHTML文字列だけを解析し、通信しません。BeautifulSoupは実HTMLに基づく実装時に使用します。
-- normalizeはフィールド名・欠損値・日付・数値を標準形式へ変換する場所です。HTML解析は行いません。PScubeのフィールド契約確定後に実装します。
-- collectorは上記を組み合わせ、`list[SlotResult]`を返す設計です。現状のPScubeはHTML取得後、parserの未実装例外で停止します。
-- jobは設定読み込みと実行を担当します。`collect_pscube`はネットワークアクセスせず、未実装をログに記録して終了コード1で終了します。不正な設定は終了コード2です。取得検証には別の`inspect_pscube`を使用します。
+- parserはレスポンス本文だけを解析し、通信しません。PScubeではHTML診断に加え、機種一覧JSON・個別台JSONを専用parserで解析します。
+- normalizeはsource固有データを共通`SlotResult`へ変換する場所です。HTML/JSON解析はここに入れません。PScubeの最終マッピングはまだ未実装です。
+- collectorはclientとparserを組み合わせます。PScubeでは機種一覧のページング収集まで実装済みです。今後、個別台を複数台へ展開して標準化層へ接続します。
+- jobは設定読み込みと検証実行を担当します。`inspect_pscube*` 系CLIで、HTML・機種一覧・個別台・グラフを段階的に検証できます。`collect_pscube` の本番収集接続はまだ行いません。
 
 `SlotResult`は台番号・営業日・sourceを必須とし、店舗ID・機種ID・名称・各集計値・URLは`None`を許容します。台番号は正の整数、game/bb/rbは0以上、medalは負数も許容します。boolや数値文字列は自動変換せず拒否します。営業日は`date`、取得時刻はタイムゾーン付き`datetime`で、既定はUTCです。sourceは固定列挙にせず、追加したソース名も保持します。
 
@@ -102,7 +103,7 @@ cp -n .env.example .env
 ```
 
 既存の仮想環境が`No Python at ...`で起動しない場合は、作成元のPythonが利用できていません。
-利用可能なPythonから別名の仮想環境（例：`.venv-check`）を作成し、同じインストール・テスト手順を実行してください。
+使用する仮想環境は`.venv`に統一します。起動できない`.venv`を削除してから、利用可能なPythonで上記の作成・インストール・テスト手順を実行してください。
 
 ## 環境変数と通信設定
 
@@ -142,8 +143,7 @@ python -m jobs.inspect_pscube "URL" --save-html
 python -m jobs.inspect_pscube --help
 ```
 
-有効化しない場合はWindowsで`.\.venv\Scripts\python.exe`、検証用環境なら
-`.\.venv-check\Scripts\python.exe`を`python`の代わりに使用できます。
+有効化しない場合はWindowsで`.\.venv\Scripts\python.exe`を`python`の代わりに使用できます。
 
 このコマンドはPScubeのアクセス挙動を調査する検証ツールであり、アクセス制御回避や認証突破を目的としません。
 `requests.Session`で指定URLへ通常のGETを行い、HTTPリダイレクトだけを追従します。
@@ -192,12 +192,12 @@ python -m jobs.inspect_pscube_machines "https://yasudaya.pscube.jp/h/a744207/cgi
 python -m jobs.inspect_pscube_machines --help
 ```
 
-有効化していない場合は`python`を`.\.venv-check\Scripts\python.exe`等に置き換えてください。
+有効化していない場合は`python`を`.\.venv\Scripts\python.exe`等に置き換えてください。
 通常ページをGETしてから、同じSessionでXHRをpage=1からpageMaxまで逐次取得します。
 各呼び出し間は`REQUEST_INTERVAL`、timeoutは`REQUEST_TIMEOUT`を使用します。
 手動Cookie注入や認証回避は行いません。HTTPエラー、JSONでない応答、必須フィールド不正で停止します。
 出力はhost、営業日、サーバーのcount/pageMax、取得機種件数、各機種名・台数・台番号件数です。
-countの意味と実際の機種件数が一致するかは未検証のため、独立した値として表示します。
+2026-09-22 の実取得では、page 1=20機種/86台、page 2=20機種/23台、page 3=1機種/1台で、合計41機種/110台でした。トップレベルの`count=41`と取得機種件数が一致することを確認済みです。
 
 `client.fetch_json()`はJSON decodeまで行い`JsonFetchResult`を返します。
 `parser.parse_machine_page()`は通信せず`PscubeMachinePage`へ変換し、
@@ -242,7 +242,7 @@ python -m jobs.inspect_pscube_unit --from-json "debug/pscube/保存した_unit.j
 python -m jobs.inspect_pscube_unit --help
 ```
 
-仮想環境を有効化していない場合は`python`を`.\.venv-check\Scripts\python.exe`に置き換えます。
+仮想環境を有効化していない場合は`python`を`.\.venv\Scripts\python.exe`に置き換えます。
 1回に1台だけ、個別台HTML→同じSessionでGET `nc-m06-001.php` の順に取得します。
 通常HTMLのインラインscriptから`api.apikey`、`api.token = JSON.parse(...)`、`.show(台番号, 営業日, ...)`を読み取り、
 `cd_dai / YMD_biz / apikey / _i / _t / page=1`を渡します。
@@ -333,11 +333,12 @@ plotの外側を上側・左側・下側のタイトル／軸ラベル領域と�
 
 実画像検証：0272 / 2026-09-21、800×730、plot=(79,20,780,676)。
 grid Y=[20,129,238,348,457,567,676]、zero_y=567、step_px=109.3333、終点=(779,211)。
-estimated_medal=**+3256枚**、confidence=high（既定スケールの前提あり）。目視の約+3200枚と大きな乖離はありません。
-正解値は未提供のため、誤差率・絶対精度は未評価です。1pxが約9.15枚に相当します。
+estimated_medal=**+3256枚**、confidence=high（既定スケールの前提あり）。1pxは約9.15枚に相当します。
+
+同一台・同一日の外部値との初期比較では、**みんレポ +3250枚 / アナスロ +3245枚 / PScube画像推定 +3256枚** でした。差はみんレポ比+6枚、アナスロ比+11枚で、この1件では良好です。ただし1サンプルのため、置換判断には複数台・複数差枚レンジでの誤差分布検証が必要です。
 
 外部画像をGitに入れず、テストではPillowで架空の正差枚・負差枚・ノイズ・欠損・異なる画像サイズを生成します。
-残課題は軸レンジ変更の識別、線切れ・別配色・複数線・途中経過・端でのクリップへの対応、複数実例と既知差枚による精度評価です。
+残課題は軸レンジ変更の識別、線切れ・別配色・複数線・途中経過・端でのクリップへの対応、複数実例と既知差枚による精度評価です。次の検証では、みんレポ・アナスロ等と同一台同一日で比較し、MAE・中央値・最大誤差・±25/50/100/200枚以内率などを算出します。
 OCR・機械学習・一括取得・並列取得・Supabase保存は追加していません。
 
 ## データソース追加と今後
