@@ -1,6 +1,7 @@
 """Pillow-only geometric prototype. Axis values are a declared layout profile, not OCR."""
 
 from dataclasses import dataclass, field
+from colorsys import rgb_to_hsv
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from io import BytesIO
@@ -21,7 +22,8 @@ class GraphProfile:
     step_medal: int = 1000
 
     def __post_init__(self) -> None:
-        if (self.step_medal <= 0 or self.top_medal <= self.bottom_medal
+        if (any(type(v) is not int for v in (self.top_medal, self.bottom_medal, self.step_medal))
+                or self.step_medal <= 0 or self.top_medal <= self.bottom_medal
                 or not self.bottom_medal <= 0 <= self.top_medal
                 or (self.top_medal - self.bottom_medal) % self.step_medal
                 or self.top_medal % self.step_medal):
@@ -37,6 +39,7 @@ class GraphEstimate:
     image_height: int
     plot_bounds: tuple[int, int, int, int] | None = None
     horizontal_grid_y: list[int] = field(default_factory=list)
+    selected_profile: GraphProfile | None = None
     zero_y: float | None = None
     step_px: float | None = None
     line_end_x: float | None = None
@@ -95,19 +98,22 @@ def _gray(pixel: tuple[int, int, int]) -> bool:
     return min(pixel) >= 45 and max(pixel) - min(pixel) <= 30
 
 
-def _pink(pixel: tuple[int, int, int]) -> bool:
-    r, g, b = pixel
-    return r >= 85 and b >= 70 and r - g >= 25 and b - g >= 20 and abs(r - b) <= 110
+CONFIRMED_PROFILES = (GraphProfile(), GraphProfile(1500, -1500, 500))
 
 
-def estimate_graph(path: Path, day: date, unit: str, profile: GraphProfile = GraphProfile()) -> GraphEstimate:
+def _colored(pixel: tuple[int, int, int]) -> bool:
+    _, saturation, value = rgb_to_hsv(*(c / 255 for c in pixel))
+    return saturation >= .35 and value >= .30 and not _gray(pixel)
+
+
+def estimate_graph(path: Path, day: date, unit: str, profile: GraphProfile | None = None) -> GraphEstimate:
     _unit(unit)
     with Image.open(path) as source:
         source.load()
         image = source.convert("RGB")
     w, h = image.size
     result = GraphEstimate(day, unit, str(path), w, h)
-    result.warnings.append("Axis values assumed from supplied profile; labels are not recognized.")
+    result.warnings.append("Axis values limited to confirmed profiles or explicit input; labels are not recognized.")
     if w < 80 or h < 80:
         result.warnings.append("Image too small.")
         return result
@@ -118,8 +124,9 @@ def estimate_graph(path: Path, day: date, unit: str, profile: GraphProfile = Gra
             if sum(_gray(pixels[x, y]) for x in range(sx, ex)) >= (ex - sx) * .32]
     grid = [round(median(group)) for group in _groups(rows)]
     result.horizontal_grid_y = grid
-    expected = (profile.top_medal - profile.bottom_medal) // profile.step_medal + 1
-    if len(grid) != expected or len(grid) < 3:
+    candidates = [p for p in ((profile,) if profile else CONFIRMED_PROFILES)
+                  if len(grid) == (p.top_medal - p.bottom_medal) // p.step_medal + 1]
+    if not candidates or len(grid) < 3:
         result.warnings.append("Grid count does not match profile; no scale interpolation attempted.")
         return result
     gaps = [b - a for a, b in zip(grid, grid[1:])]
@@ -144,20 +151,28 @@ def estimate_graph(path: Path, day: date, unit: str, profile: GraphProfile = Gra
     # Average over the full span reduces integer raster rounding of individual gaps.
     step = (bottom - top) / (len(grid) - 1)
     result.step_px = step
-    zero_index = profile.top_medal // profile.step_medal
-    result.zero_y = float(grid[zero_index])
-    # A visibly emphasized line elsewhere contradicts the zero-line profile.
     brightness = []
     for y in grid:
         gray = [sum(pixels[x, y]) / 3 for x in range(sx, ex) if _gray(pixels[x, y])]
         brightness.append(median(gray) if gray else 0)
     interior = brightness[1:-1]
-    if (interior and max(interior) > median(brightness) * 1.4
-            and brightness[zero_index] < max(interior) * .8):
+    emphasized = [i for i in range(1, len(grid) - 1)
+                  if brightness[i] > median(brightness) * 1.4
+                  and brightness[i] >= max(interior) * .8]
+    if profile is None:
+        candidates = [p for p in candidates if emphasized == [p.top_medal // p.step_medal]]
+        if len(candidates) != 1:
+            result.warnings.append("Confirmed axis profile is ambiguous or unsupported.")
+            return result
+    profile = candidates[0]
+    zero_index = profile.top_medal // profile.step_medal
+    if emphasized and emphasized != [zero_index]:
         result.warnings.append("Emphasized grid contradicts assumed zero line.")
         return result
+    result.selected_profile = profile
+    result.zero_y = float(grid[zero_index])
     points = {(x, y) for y in range(top, bottom + 1) for x in range(left, right + 1)
-              if _pink(pixels[x, y])}
+              if _colored(pixels[x, y])}
     components = []
     while points:
         seed = points.pop()
@@ -174,7 +189,7 @@ def estimate_graph(path: Path, day: date, unit: str, profile: GraphProfile = Gra
         if max(xs) - min(xs) >= (right - left) * .15 and len(component) >= (right - left) * .15:
             components.append(component)
     if not components:
-        result.warnings.append("No sufficiently connected pink line.")
+        result.warnings.append("No sufficiently connected colored line.")
         return result
     components.sort(key=lambda c: max(x for x,y in c) - min(x for x,y in c), reverse=True)
     main = components[0]

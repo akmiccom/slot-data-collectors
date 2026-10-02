@@ -99,3 +99,46 @@ def test_offline_cli(monkeypatch,tmp_path,capsys):
 def test_no_grid(tmp_path):
     path=tmp_path/'blank.png';Image.new('RGB',(400,380)).save(path)
     assert estimate_graph(path,DAY,'0272').estimated_medal is None
+
+
+@pytest.mark.parametrize("color", [(100, 60, 220), (30, 170, 230)])
+def test_symmetric_profile_and_color(tmp_path, color):
+    path = fixture(tmp_path / 'symmetric.png', line=False)
+    with Image.open(path) as im:
+        draw = ImageDraw.Draw(im)
+        draw.line((40,270,390,270), fill=(120,120,120))
+        draw.line((40,170,390,170), fill=(210,210,210))
+        draw.line([(40,170),(120,210),(250,100),(389,30)], fill=color, width=2)
+        im.save(path)
+    result = estimate_graph(path, DAY, '0272')
+    assert result.selected_profile == GraphProfile(1500,-1500,500)
+    assert result.zero_y == 170
+    assert result.estimated_medal == pytest.approx(1400, abs=15)
+
+
+def test_ambiguous_axis_requires_explicit_profile(tmp_path):
+    path = fixture(tmp_path / 'ambiguous.png', line=False)
+    with Image.open(path) as im:
+        ImageDraw.Draw(im).line((40,270,390,270), fill=(120,120,120))
+        ImageDraw.Draw(im).line([(40,280),(150,210),(389,130)], fill=(245,115,220), width=2)
+        im.save(path)
+    assert estimate_graph(path, DAY, '0272').estimated_medal is None
+    assert estimate_graph(path, DAY, '0272', GraphProfile()).estimated_medal is not None
+
+
+def test_original_geometry_regression(tmp_path):
+    path = tmp_path / 'original.png'
+    im = Image.new('RGB', (800,730), 'black')
+    draw = ImageDraw.Draw(im)
+    draw.line((79,20,79,676), fill=(140,140,140))
+    for y in (20,129,238,348,457,567,676):
+        draw.line((79,y,780,y), fill=(210,210,210) if y==567 else (120,120,120))
+    draw.line([(79,567),(250,590),(500,400),(779,211)],fill=(245,115,220))
+    im.save(path)
+    assert estimate_graph(path, DAY, '0272').estimated_medal == 3256
+
+
+@pytest.mark.parametrize('values', [(True,-1000,1000),(5000,-1000,False),(5000.0,-1000,1000)])
+def test_profile_rejects_nonintegers(values):
+    with pytest.raises(ValueError):
+        GraphProfile(*values)

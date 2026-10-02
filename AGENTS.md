@@ -230,7 +230,16 @@ fix: handle missing PScube graph rows
 refactor: isolate PScube normalization
 ```
 
-## 12. 次に優先する作業
+## 12. 仕様記録とコードの同期
+
+- READMEは概要・使い方、docsは詳細仕様、AGENTSはAI作業規約として扱う。
+- 実サイトで新しい通信仕様・JSONフィールド・軸レンジ・配色を確認した場合、実装変更と同じコミットで[docs/pscube](docs/pscube/overview.md)の該当仕様を更新する。
+- XHR URL/query、parser/field mapping、estimated_game、GraphProfile/線検出、normalize、source優先順位を変更した場合は関連docsを確認する。影響がなければ編集は不要。
+- 確認済み事実と推測を区別し、1例の仕様を常に成立するものと一般化しない。
+- グラフ解析では誤推定よりNoneを優先し、既存の確認済み実例を回帰ケースとして維持する。
+- 軸と配色の確認例・制約は[グラフ解析](docs/pscube/graph-estimation.md)、実例は[検証記録](docs/pscube/validation.md)へ記録する。
+
+## 13. 次に優先する作業
 
 現時点の優先順位は以下です。
 

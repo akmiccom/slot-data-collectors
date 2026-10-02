@@ -26,16 +26,19 @@ def main(argv: list[str] | None = None) -> int:
     source.add_argument("--unit-url", help="対象台の通常ページURL。同じSessionでJSONと画像を取得")
     source.add_argument("--image", type=Path, help="ローカル画像を通信せず解析")
     parser.add_argument("--annotate", action="store_true")
-    parser.add_argument("--top-medal", type=int, default=5000)
-    parser.add_argument("--bottom-medal", type=int, default=-1000)
-    parser.add_argument("--step-medal", type=int, default=1000)
+    parser.add_argument("--top-medal", type=int)
+    parser.add_argument("--bottom-medal", type=int)
+    parser.add_argument("--step-medal", type=int)
     args = parser.parse_args(argv)
     configure_logging()
     load_dotenv(ROOT / ".env")
     stage = "configuration"
     try:
         day = datetime.strptime(args.date, "%Y%m%d").date()
-        profile = GraphProfile(args.top_medal, args.bottom_medal, args.step_medal)
+        scale = (args.top_medal, args.bottom_medal, args.step_medal)
+        if any(v is not None for v in scale) and any(v is None for v in scale):
+            raise ValueError("Supply all three profile values")
+        profile = GraphProfile(*scale) if all(v is not None for v in scale) else None
         directory = ROOT / "debug/pscube/graphs"
         path = args.image
         if args.unit_url:

@@ -192,3 +192,18 @@ def test_unknown_and_duplicate_titles(payload):
     payload["Data"].append({"title":"BIG","item":[1]})
     with pytest.raises(UnitParseError):
         parse_unit_detail(payload)
+
+
+def test_internal_title_aliases(payload):
+    names = ["toku1-count-s", "toku5-count-s", "toku1-ratio-s", "toku5-ratio-s", "toku0-ratio-s", "sadama_s-s"]
+    rows = [row for row in payload["Data"] if row is not None]
+    for row, name, value in zip(rows, names, (25,26,252.4,242.7,123.8,1769)):
+        row["title"] = name
+        row["item"] = [value]
+    day = parse_unit_detail(payload).days[0]
+    assert (day.bb, day.rb, day.max_payout) == (25,26,1769)
+    assert day.estimated_game == 6311
+    assert day.estimated_game_candidates == []
+    payload["Data"].append({"title":"BIG", "item":[25]})
+    with pytest.raises(UnitParseError):
+        parse_unit_detail(payload)

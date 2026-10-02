@@ -62,7 +62,10 @@ def parse_unit_detail(data: dict[str, object]) -> PscubeUnitDetail:
     unit = dai.get("cd_dai")
     if not isinstance(unit, str) or not unit.isascii() or not unit.isdigit():
         raise UnitParseError("Unit number must be a digit string")
-    titles = {"BIG", "REG", "BIG確率", "REG確率", "合成確率", "最大出玉"}
+    titles = {title: title for title in ("BIG", "REG", "BIG確率", "REG確率", "合成確率", "最大出玉")}
+    titles.update(dict(zip(
+        ("toku1-count-s", "toku5-count-s", "toku1-ratio-s", "toku5-ratio-s", "toku0-ratio-s", "sadama_s-s"),
+        ("BIG", "REG", "BIG確率", "REG確率", "合成確率", "最大出玉"))))
     values = {}
     for row in rows:
         if row is None or row is False:
@@ -72,6 +75,7 @@ def parse_unit_detail(data: dict[str, object]) -> PscubeUnitDetail:
         title = row["title"]
         if title not in titles:
             continue
+        title = titles[title]
         if title in values or not isinstance(row.get("item"), list):
             raise UnitParseError("Duplicate title or invalid item")
         values[title] = row["item"]
