@@ -203,3 +203,30 @@ def test_graph_reuses_detail(collector, tmp_path, monkeypatch):
     assert path.exists()
     collect.assert_not_called()
     assert collector.client.fetch_bytes.call_count == 1
+
+
+def test_cli_hall(tmp_path, collector, graph, monkeypatch):
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.setattr(cli, "PscubeCollector", lambda client: collector)
+    monkeypatch.setattr(cli, "configure_logging", lambda: None)
+    monkeypatch.setattr(cli, "load_dotenv", lambda *args: None)
+    assert cli.main(["--hall", "yasuda5", "--machine-name", "sample",
+                     "--date", "20260921", "--limit", "2"]) == 0
+    collector.collect_machines.assert_called_once_with(
+        "https://yasudaya.pscube.jp/h/a744203/cgi-bin/nc-v03-001.php?cd_ps=2")
+    assert collector.collect_unit.call_count == 2
+
+
+def test_cli_hall_exclusive():
+    with pytest.raises(SystemExit) as error:
+        cli.main(["--hall", "yasuda5", "--hall-url", URL, "--machine-name", "sample",
+                  "--date", "20260921", "--limit", "2"])
+    assert error.value.code == 2
+
+
+def test_cli_unknown_hall(monkeypatch):
+    client = MagicMock()
+    monkeypatch.setattr(cli, "PscubeClient", client)
+    assert cli.main(["--hall", "unknown", "--machine-name", "sample",
+                     "--date", "20260921", "--limit", "2"]) == 1
+    client.assert_not_called()

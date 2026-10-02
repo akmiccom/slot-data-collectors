@@ -1,0 +1,41 @@
+{
+  "source": "pscube",
+  "halls": [
+    {
+      "key": "yasuda5",
+      "name": "YASUDA5",
+      "hall_code": "a744203",
+      "base_url": "https://yasudaya.pscube.jp/h/a744203/"
+    },
+    {
+      "key": "yasuda_shimizucho",
+      "name": "やすだ清水町店",
+      "hall_code": "a744205",
+      "base_url": "https://yasudaya.pscube.jp/h/a744205/"
+    },
+    {
+      "key": "yasuda_nakajuku",
+      "name": "やすだ仲宿店",
+      "hall_code": "a744206",
+      "base_url": "https://yasudaya.pscube.jp/h/a744206/"
+    },
+    {
+      "key": "yasuda_nishiikebukuro",
+      "name": "やすだ西池袋6号店",
+      "hall_code": "a744207",
+      "base_url": "https://yasudaya.pscube.jp/h/a744207/"
+    },
+    {
+      "key": "yasuda9",
+      "name": "YASUDA9",
+      "hall_code": "a744209",
+      "base_url": "https://yasudaya.pscube.jp/h/a744209/"
+    },
+    {
+      "key": "yasuda_hibarigaoka",
+      "name": "やすだひばりヶ丘店",
+      "hall_code": "a744210",
+      "base_url": "https://yasudaya.pscube.jp/h/a744210/"
+    }
+  ]
+}

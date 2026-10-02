@@ -65,6 +65,19 @@ Pillowで生成した紫系線・最下段強調のfixtureでもCの選択を確
 
 ## 複数台検証CLI
 
+### 店舗設定からの指定
+
+[config/pscube.json](../../config/pscube.json)の店舗keyを`--hall`へ指定します。設定には店舗の`base_url`だけを保持し、loaderの`PscubeHall.machine_list_url(cd_ps=2)`が`{base_url}cgi-bin/nc-v03-001.php?cd_ps=2`を生成します。APIでは`cd_ps=1`も指定でき、ホスト名は設定値を使います。このCLIの`--hall`はスロット用の2を使用します。
+
+```powershell
+python -m jobs.validate_pscube_units `
+  --hall yasuda5 `
+  --machine-name "マイジャグラーＶ" `
+  --date 20261001 --limit 30
+```
+
+`--hall`と従来の`--hall-url`はどちらか1つが必須で、同時指定はusage errorです。JSONのsource/halls構造、必須文字列、key重複、HTTP(S)の店舗ルートURL（`/h/{hall_code}/`）を通信前に検証します。URLの認証情報・query・fragmentは受理しません。未知keyや不正設定は終了コード1で停止します。既定設定パスはリポジトリの位置から解決し、実行ディレクトリに依存しません。
+
 ### Profile D/E追加後の注意
 
 AとDはグリッド本数と0位置が一致するため、自動選択ではlow/Noneになります。複数台CLIも同じ自動選択を使用するため、この画像はgraph_low_confidenceになります。軸を確認した単画像CLIで3つの軸値を明示すれば再解析できます。成功済みCSVを自動で書き換える処理は追加していません。

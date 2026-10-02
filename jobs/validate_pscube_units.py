@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 from dotenv import load_dotenv
 from collectors.pscube.client import PscubeClient
 from collectors.pscube.collector import PscubeCollector
+from collectors.pscube.config import get_hall
 from collectors.pscube.validation import select_machine, select_units, validate_units
 from common.exceptions import CollectorError
 from common.logging_config import configure_logging
@@ -22,7 +23,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="PScube multi-unit validation CSV (sequential)")
-    parser.add_argument("--hall-url", required=True)
+    hall = parser.add_mutually_exclusive_group(required=True)
+    hall.add_argument("--hall", help="Hall key from config/pscube.json")
+    hall.add_argument("--hall-url", help="Machine list URL")
     parser.add_argument("--machine-name", required=True, help="Exact m03 machine name")
     parser.add_argument("--date", required=True, help="YYYYMMDD")
     selection = parser.add_mutually_exclusive_group(required=True)
@@ -41,10 +44,11 @@ def main(argv: list[str] | None = None) -> int:
     load_dotenv(ROOT / ".env")
     stage = "configuration"
     try:
+        hall_url = get_hall(args.hall).machine_list_url() if args.hall else args.hall_url
         day = datetime.strptime(args.date, "%Y%m%d").date()
         if day.strftime("%Y%m%d") != args.date:
             raise ValueError("Date must be YYYYMMDD")
-        parts = urlsplit(args.hall_url)
+        parts = urlsplit(hall_url)
         identity = sha256((str(parts.hostname) + parts.path + args.machine_name).encode()).hexdigest()[:12]
         directory = ROOT / "debug/pscube/validation" / identity
         output = args.output or directory / f"{day:%Y%m%d}_validation.csv"
@@ -52,10 +56,10 @@ def main(argv: list[str] | None = None) -> int:
                           request_interval=float(os.getenv("REQUEST_INTERVAL") or "1")) as client:
             collector = PscubeCollector(client)
             stage = "machine_list"
-            machine = select_machine(collector.collect_machines(args.hall_url), args.machine_name)
+            machine = select_machine(collector.collect_machines(hall_url), args.machine_name)
             units = select_units(machine, units=args.units, limit=args.limit, all_units=args.all_units)
             stage = "unit_validation"
-            report = validate_units(collector, args.hall_url, machine, day, units, output, directory,
+            report = validate_units(collector, hall_url, machine, day, units, output, directory,
                                     force=args.force, annotate=args.annotate)
         sys.stdout.write(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
         return 2 if report["stopped"] or report["failure"] else 0
