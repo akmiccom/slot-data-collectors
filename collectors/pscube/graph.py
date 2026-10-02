@@ -1,4 +1,4 @@
-"""Pillow-only geometric prototype. Axis values are a declared layout profile, not OCR."""
+"""Pillow geometric estimation with restricted axis-label templates."""
 
 from dataclasses import dataclass, field
 from colorsys import rgb_to_hsv
@@ -10,6 +10,7 @@ from statistics import median
 from urllib.parse import urljoin, urlsplit
 import re
 from PIL import Image, ImageDraw
+from collectors.pscube.axis_labels import AxisLabel, recognize_axis_labels
 from collectors.pscube.client import PscubeClient
 from collectors.pscube.collector import PscubeCollector
 from collectors.pscube.models import PscubeUnitDetail
@@ -48,6 +49,8 @@ class GraphEstimate:
     estimated_medal: int | None = None
     confidence: str = "low"
     warnings: list[str] = field(default_factory=list)
+    axis_labels: list[AxisLabel] = field(default_factory=list)
+    axis_recognition_confidence: str = "low"
 
 
 def _unit(value: str) -> None:
@@ -117,7 +120,6 @@ def estimate_graph(path: Path, day: date, unit: str, profile: GraphProfile | Non
         image = source.convert("RGB")
     w, h = image.size
     result = GraphEstimate(day, unit, str(path), w, h)
-    result.warnings.append("Axis values limited to confirmed profiles or explicit input; labels are not recognized.")
     if w < 80 or h < 80:
         result.warnings.append("Image too small.")
         return result
@@ -170,10 +172,23 @@ def estimate_graph(path: Path, day: date, unit: str, profile: GraphProfile | Non
         emphasized = [i for i in emphasized
                       if 0 < i < len(grid) - 1 or coverage_by_row[i] < .9]
     if profile is None:
-        candidates = [p for p in candidates if emphasized == [p.top_medal // p.step_medal]]
-        if len(candidates) != 1:
-            result.warnings.append("Confirmed axis profile is ambiguous or unsupported.")
+        result.axis_labels = recognize_axis_labels(image, left, grid)
+        values = [label.recognized_value for label in result.axis_labels]
+        # Require every row: missing signs/digits must not be filled from a profile.
+        if any(value is None for value in values):
+            result.warnings.append("axis labels partially recognized")
             return result
+        differences = [a-b for a, b in zip(values, values[1:])]
+        if (not differences or differences[0] <= 0 or len(set(differences)) != 1
+                or values.count(0) != 1 or emphasized != [values.index(0)]):
+            result.warnings.append("axis labels inconsistent")
+            return result
+        candidates = [p for p in candidates
+                      if values == [p.top_medal-i*p.step_medal for i in range(len(grid))]]
+        if len(candidates) != 1:
+            result.warnings.append("axis profile ambiguous or unknown profile")
+            return result
+        result.axis_recognition_confidence = "high"
     profile = candidates[0]
     zero_index = profile.top_medal // profile.step_medal
     if emphasized and emphasized != [zero_index]:

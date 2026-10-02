@@ -111,7 +111,7 @@ def test_symmetric_profile_and_color(tmp_path, color):
         draw.line((40,170,390,170), fill=(210,210,210))
         draw.line([(40,170),(120,210),(250,100),(389,30)], fill=color, width=2)
         im.save(path)
-    result = estimate_graph(path, DAY, '0272')
+    result = estimate_graph(path, DAY, '0272', GraphProfile(1500,-1500,500))
     assert result.selected_profile == GraphProfile(1500,-1500,500)
     assert result.zero_y == 170
     assert result.estimated_medal == pytest.approx(1400, abs=15)
@@ -158,7 +158,7 @@ def profile_c_fixture(path, *, emphasized=(6,), end_y=646):
 
 @pytest.mark.parametrize('unit,day', [('0100', date(2026, 10, 1)), ('0042', DAY)])
 def test_profile_c_boundary_zero(tmp_path, unit, day):
-    result = estimate_graph(profile_c_fixture(tmp_path / 'c.png'), day, unit)
+    result = estimate_graph(profile_c_fixture(tmp_path / 'c.png'), day, unit, GraphProfile(3000,0,500))
     assert result.selected_profile == GraphProfile(3000, 0, 500)
     assert result.zero_y == 676
     assert result.step_px == pytest.approx(656 / 6)
@@ -211,11 +211,8 @@ def test_profiles_d_e_and_b_regression(tmp_path, profile, zero_index, end_y):
     assert result.estimated_medal == round((grid[zero_index]-end_y)/(656/6)*500)
     assert result.confidence == 'high'
     auto = estimate_graph(path, DAY, '0042')
-    if zero_index == 5:
-        assert auto.estimated_medal is None and auto.confidence == 'low'
-    else:
-        assert auto.selected_profile == profile
-        assert auto.estimated_medal == result.estimated_medal
+    assert auto.selected_profile is None
+    assert auto.estimated_medal is None and auto.confidence == 'low'
 
 
 def test_a_d_collision_returns_none(tmp_path):
