@@ -151,6 +151,8 @@ python -m jobs.inspect_pscube_graph --unit 0272 --date 20261001 --image "debug/p
 
 PScube複数台差枚検証CLI `jobs.validate_pscube_units` と手入力比較値の再集計CLI `jobs.evaluate_pscube_validation` を追加済みです。選択取得・再開・CSV列・集計方法は[複数台検証の使い方](docs/pscube/validation.md#複数台検証cli)を参照してください。
 
+2026-10-01の30台一括実画像検証の統計、独立検証に関する制約、次回計画は[検証記録](docs/pscube/validation.md#2026-10-01-30台一括実画像検証)を参照してください。
+
 ## データソース追加と今後
 
 同じシステムを使う店舗は同じcollectorを共有し、店舗ごとのURLやIDは呼び出し側の設定として扱います。
