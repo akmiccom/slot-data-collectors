@@ -143,7 +143,7 @@ python -m jobs.inspect_pscube_unit --from-json "保存した_unit.json"
 python -m jobs.inspect_pscube_graph --unit 0272 --date 20261001 --image "debug/pscube/graphs/20261001_0272.png" --annotate
 ```
 
-各CLIの`--help`で引数を確認できます。グラフは確認済みの2種類の軸候補から自動選択し、ピンク・紫などの有彩色の連結線を検出します。判定不能時は差枚をNoneとします。任意の軸は`--top-medal / --bottom-medal / --step-medal`の3項目すべてを指定してください。
+各CLIの`--help`で引数を確認できます。グラフは確認済みの3種類の軸候補（A/B/C）から自動選択し、ピンク・紫などの有彩色の連結線を検出します。判定不能時は差枚をNoneとします。任意の軸は`--top-medal / --bottom-medal / --step-medal`の3項目すべてを指定してください。
 
 2026-09-21の0272は+3256枚、2026-10-01の保存画像は+1393枚と推定しました。これらは推定値で、精度保証ではありません。個別台の表示名と確認済み内部キーの両方に対応しています。
 

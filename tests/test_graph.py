@@ -142,3 +142,43 @@ def test_original_geometry_regression(tmp_path):
 def test_profile_rejects_nonintegers(values):
     with pytest.raises(ValueError):
         GraphProfile(*values)
+
+
+def profile_c_fixture(path, *, emphasized=(6,), end_y=646):
+    image = Image.new('RGB', (800, 730), 'black')
+    draw = ImageDraw.Draw(image)
+    draw.line((79, 20, 79, 676), fill=(140, 140, 140))
+    for index, y in enumerate((20, 129, 238, 348, 457, 567, 676)):
+        draw.line((79, y, 780, y), fill=(255, 255, 255) if index in emphasized else (123, 123, 123))
+    draw.line([(79, 675), (250, 600), (500, 560), (779, end_y)], fill=(100, 60, 220))
+    image.save(path)
+    return path
+
+
+@pytest.mark.parametrize('unit,day', [('0100', date(2026, 10, 1)), ('0042', DAY)])
+def test_profile_c_boundary_zero(tmp_path, unit, day):
+    result = estimate_graph(profile_c_fixture(tmp_path / 'c.png'), day, unit)
+    assert result.selected_profile == GraphProfile(3000, 0, 500)
+    assert result.zero_y == 676
+    assert result.step_px == pytest.approx(656 / 6)
+    assert (result.line_end_x, result.line_end_y) == (779, 646)
+    # Derive expected medals from generated geometry, not a supplied comparison value.
+    assert result.estimated_medal == round((676 - 646) / (656 / 6) * 500)
+    assert result.confidence == 'high'
+
+
+@pytest.mark.parametrize('emphasized', [(), (3, 6), (5, 6), (0, 6), (0,)])
+def test_profile_c_ambiguous_or_unsupported_zero(tmp_path, emphasized):
+    result = estimate_graph(profile_c_fixture(tmp_path / 'ambiguous_c.png', emphasized=emphasized), DAY, '0100')
+    assert result.estimated_medal is None and result.confidence == 'low'
+    assert result.selected_profile is None
+    assert result.warnings
+
+
+def test_profile_c_explicit_and_wrong_profile(tmp_path):
+    path = profile_c_fixture(tmp_path / 'explicit_c.png')
+    result = estimate_graph(path, DAY, '0100', GraphProfile(3000, 0, 500))
+    assert result.estimated_medal is not None
+    for profile in (GraphProfile(), GraphProfile(1500, -1500, 500)):
+        result = estimate_graph(path, DAY, '0100', profile)
+        assert result.estimated_medal is None and result.confidence == 'low'

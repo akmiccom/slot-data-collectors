@@ -101,7 +101,7 @@ def _gray(pixel: tuple[int, int, int]) -> bool:
     return min(pixel) >= 45 and max(pixel) - min(pixel) <= 30
 
 
-CONFIRMED_PROFILES = (GraphProfile(), GraphProfile(1500, -1500, 500))
+CONFIRMED_PROFILES = (GraphProfile(), GraphProfile(1500, -1500, 500), GraphProfile(3000, 0, 500))
 
 
 def _colored(pixel: tuple[int, int, int]) -> bool:
@@ -158,10 +158,10 @@ def estimate_graph(path: Path, day: date, unit: str, profile: GraphProfile | Non
     for y in grid:
         gray = [sum(pixels[x, y]) / 3 for x in range(sx, ex) if _gray(pixels[x, y])]
         brightness.append(median(gray) if gray else 0)
-    interior = brightness[1:-1]
-    emphasized = [i for i in range(1, len(grid) - 1)
+    # Boundary zero lines are valid too; require the same unique emphasis evidence.
+    emphasized = [i for i in range(len(grid))
                   if brightness[i] > median(brightness) * 1.4
-                  and brightness[i] >= max(interior) * .8]
+                  and brightness[i] >= max(brightness) * .8]
     if profile is None:
         candidates = [p for p in candidates if emphasized == [p.top_medal // p.step_medal]]
         if len(candidates) != 1:
