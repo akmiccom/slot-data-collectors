@@ -101,7 +101,8 @@ def _gray(pixel: tuple[int, int, int]) -> bool:
     return min(pixel) >= 45 and max(pixel) - min(pixel) <= 30
 
 
-CONFIRMED_PROFILES = (GraphProfile(), GraphProfile(1500, -1500, 500), GraphProfile(3000, 0, 500))
+CONFIRMED_PROFILES = (GraphProfile(), GraphProfile(1500, -1500, 500), GraphProfile(3000, 0, 500),
+                      GraphProfile(2500, -500, 500), GraphProfile(1000, -2000, 500))
 
 
 def _colored(pixel: tuple[int, int, int]) -> bool:
@@ -162,6 +163,12 @@ def estimate_graph(path: Path, day: date, unit: str, profile: GraphProfile | Non
     emphasized = [i for i in range(len(grid))
                   if brightness[i] > median(brightness) * 1.4
                   and brightness[i] >= max(brightness) * .8]
+    # A solid boundary frame is not a second zero when an emphasized dashed
+    # interior grid is present. Keep ambiguous solid/solid fixtures rejected.
+    coverage_by_row = [sum(_gray(pixels[x, y]) for x in range(sx, ex)) / (ex - sx) for y in grid]
+    if any(0 < i < len(grid) - 1 and coverage_by_row[i] < .9 for i in emphasized):
+        emphasized = [i for i in emphasized
+                      if 0 < i < len(grid) - 1 or coverage_by_row[i] < .9]
     if profile is None:
         candidates = [p for p in candidates if emphasized == [p.top_medal // p.step_medal]]
         if len(candidates) != 1:

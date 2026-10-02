@@ -30,7 +30,7 @@ def fixture(path, *, end_y=130, missing=False, unstable=False, line=True, early=
 @pytest.mark.parametrize("scale", [1,2])
 def test_positive_grid_and_endpoint(tmp_path, scale):
     p=fixture(tmp_path/'positive.png',size=scale)
-    r=estimate_graph(p,DAY,'0272')
+    r=estimate_graph(p,DAY,'0272',GraphProfile())
     assert len(r.horizontal_grid_y)==7
     assert r.zero_y == pytest.approx(270*scale, abs=1)
     assert r.step_px == pytest.approx(50*scale,abs=1)
@@ -43,19 +43,19 @@ def test_positive_grid_and_endpoint(tmp_path, scale):
 
 
 def test_negative(tmp_path):
-    r=estimate_graph(fixture(tmp_path/'negative.png',end_y=300),DAY,'0272')
+    r=estimate_graph(fixture(tmp_path/'negative.png',end_y=300),DAY,'0272',GraphProfile())
     assert r.estimated_medal == pytest.approx(-600,abs=20)
 
 
 @pytest.mark.parametrize('kwargs',[{'missing':True},{'unstable':True},{'line':False}])
 def test_unknown_returns_none(tmp_path,kwargs):
-    r=estimate_graph(fixture(tmp_path/'bad.png',**kwargs),DAY,'0272')
+    r=estimate_graph(fixture(tmp_path/'bad.png',**kwargs),DAY,'0272',GraphProfile())
     assert r.estimated_medal is None and r.confidence=='low'
     assert r.warnings
 
 
 def test_early_end(tmp_path):
-    r=estimate_graph(fixture(tmp_path/'early.png',early=True),DAY,'0272')
+    r=estimate_graph(fixture(tmp_path/'early.png',early=True),DAY,'0272',GraphProfile())
     assert r.confidence=='medium'
     assert r.line_end_x < r.plot_bounds[2]
 
@@ -68,7 +68,7 @@ def test_wrong_profile(tmp_path):
 def test_multiple_lines(tmp_path):
     path=fixture(tmp_path/'multi.png')
     im=Image.open(path);ImageDraw.Draw(im).line((100,70,350,70),fill=(255,100,230),width=2);im.save(path)
-    assert estimate_graph(path,DAY,'0272').estimated_medal is None
+    assert estimate_graph(path,DAY,'0272',GraphProfile()).estimated_medal is None
 
 
 def test_fetch_one_graph(monkeypatch,tmp_path):
@@ -92,7 +92,8 @@ def test_offline_cli(monkeypatch,tmp_path,capsys):
     path=fixture(tmp_path/'cli.png')
     monkeypatch.setattr(cli,'ROOT',tmp_path)
     monkeypatch.setattr(cli,'configure_logging',lambda:None)
-    assert cli.main(['--unit','0272','--date','20260921','--image',str(path),'--annotate'])==0
+    assert cli.main(['--unit','0272','--date','20260921','--image',str(path),'--annotate',
+                     '--top-medal','5000','--bottom-medal','-1000','--step-medal','1000'])==0
     assert '"grid_line_count": 7' in capsys.readouterr().out
 
 
@@ -135,7 +136,7 @@ def test_original_geometry_regression(tmp_path):
         draw.line((79,y,780,y), fill=(210,210,210) if y==567 else (120,120,120))
     draw.line([(79,567),(250,590),(500,400),(779,211)],fill=(245,115,220))
     im.save(path)
-    assert estimate_graph(path, DAY, '0272').estimated_medal == 3256
+    assert estimate_graph(path, DAY, '0272', GraphProfile()).estimated_medal == 3256
 
 
 @pytest.mark.parametrize('values', [(True,-1000,1000),(5000,-1000,False),(5000.0,-1000,1000)])
@@ -182,3 +183,52 @@ def test_profile_c_explicit_and_wrong_profile(tmp_path):
     for profile in (GraphProfile(), GraphProfile(1500, -1500, 500)):
         result = estimate_graph(path, DAY, '0100', profile)
         assert result.estimated_medal is None and result.confidence == 'low'
+
+
+def dashed_profile_fixture(path, zero_index, end_y):
+    image = Image.new('RGB', (800, 730), 'black')
+    draw = ImageDraw.Draw(image)
+    draw.line((79, 20, 79, 676), fill=(140, 140, 140))
+    for i, y in enumerate((20, 129, 238, 348, 457, 567, 676)):
+        for x in range(79, 780, 10):
+            draw.line((x, y, min(x + 5, 780), y), fill=(255,255,255) if i == zero_index else (123,123,123))
+    draw.line((79,676,780,676), fill=(255,255,255))
+    draw.line([(79,350),(300,400),(500,450),(779,end_y)], fill=(100,60,220))
+    image.save(path)
+    return path
+
+
+@pytest.mark.parametrize('profile,zero_index,end_y', [
+    (GraphProfile(2500,-500,500),5,162),
+    (GraphProfile(1000,-2000,500),2,588),
+    (GraphProfile(1500,-1500,500),3,626),
+])
+def test_profiles_d_e_and_b_regression(tmp_path, profile, zero_index, end_y):
+    path = dashed_profile_fixture(tmp_path / 'profile.png', zero_index, end_y)
+    result = estimate_graph(path, DAY, '0042', profile)
+    grid = [20,129,238,348,457,567,676]
+    assert result.selected_profile == profile
+    assert result.estimated_medal == round((grid[zero_index]-end_y)/(656/6)*500)
+    assert result.confidence == 'high'
+    auto = estimate_graph(path, DAY, '0042')
+    if zero_index == 5:
+        assert auto.estimated_medal is None and auto.confidence == 'low'
+    else:
+        assert auto.selected_profile == profile
+        assert auto.estimated_medal == result.estimated_medal
+
+
+def test_a_d_collision_returns_none(tmp_path):
+    path = fixture(tmp_path / 'collision.png')
+    result = estimate_graph(path, DAY, '0272')
+    assert result.selected_profile is None
+    assert result.estimated_medal is None and result.confidence == 'low'
+    a = estimate_graph(path, DAY, '0272', GraphProfile())
+    d = estimate_graph(path, DAY, '0272', GraphProfile(2500,-500,500))
+    assert a.estimated_medal == d.estimated_medal * 2
+
+
+def test_unknown_zero_position(tmp_path):
+    path = dashed_profile_fixture(tmp_path / 'unknown.png', 4, 500)
+    result = estimate_graph(path, DAY, '0042')
+    assert result.estimated_medal is None and result.confidence == 'low'
