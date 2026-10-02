@@ -238,6 +238,7 @@ refactor: isolate PScube normalization
 - 確認済み事実と推測を区別し、1例の仕様を常に成立するものと一般化しない。
 - グラフ解析では誤推定よりNoneを優先し、既存の確認済み実例を回帰ケースとして維持する。
 - 軸と配色の確認例・制約は[グラフ解析](docs/pscube/graph-estimation.md)、実例は[検証記録](docs/pscube/validation.md)へ記録する。
+- 複数台検証CLIは台選択を必須とし逐次取得する。403/429では以後の取得を停止し、成功済みCSV行・手入力比較値を保持する。本番collectorへの統合とは区別する。
 
 ## 13. 次に優先する作業
 

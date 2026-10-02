@@ -17,6 +17,7 @@ python -m jobs.inspect_pscube_graph --unit 0272 --date 20260921 --image "debug/p
 画像GETには通常ページのRefererを付けます。今回、Refererなしでは403、通常のReferer付きでは取得できました。
 Graph srcをCLIやログに表示しません。Cookieのコピー・認証回避・403再試行は行いません。
 古いJSONの期限等が不明なため、ネットワークモードでは同一Sessionで最新の個別台JSONを取得してから1枚だけ取得します。
+複数台検証では同一Sessionで取得済みの`PscubeUnitDetail`を`fetch_graph(..., detail=detail)`へ渡し、m06を二重取得せず画像だけ取得します。軸・線・差枚の推定ロジックは共通です。
 画像はPNGへ再保存し、`debug/pscube/graphs/YYYYMMDD_台番号.png`に保存します。同じ日・台の再取得は上書きします。
 店舗をファイル名に含めないため、別店舗の同じ台番号・日付では衝突します。今回は1店舗の検証用です。
 

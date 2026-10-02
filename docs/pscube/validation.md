@@ -12,7 +12,7 @@ zero_y=567、step_px=109.3333、終点=(779,211)、推定+3256枚。みんレポ
 yasudaya.pscube.jp / a744207、ネオアイムジャグラーEX。ユーザーがProfile B（+1500〜-1500、500刻み）、紫〜青紫系線を確認。旧固定profileでは0ラインと強調線が矛盾し、差枚Noneとなりました。
 
 今回、保存済みの原画像を通信せず再解析: 800×730、plot=(79,20,780,676)、grid=[20,129,238,348,457,567,676]、Profile Bを自動選択、zero_y=348、step_px=109.3333、終点=(779,43.5)、推定+1393枚、confidence=high。
-目視の約+1400枚と整合しますが、目視値は正解値やテスト期待値として使用していません。外部の確定差枚との比較は未実施です。
+目視の約+1400枚と整合しますが、目視値は正解値やテスト期待値として使用していません。今回ユーザーから比較値として、みんレポ+1390枚、アナスロ+1386枚が提示されました。
 
 BIG25/REG26、分母252.4/242.7/123.8からestimated_game=6311、candidates=[]。最大出玉1769は差枚ではありません。
 
@@ -22,3 +22,70 @@ BIG25/REG26、分母252.4/242.7/123.8からestimated_game=6311、candidates=[]�
 highはスケール前提付きの幾何検出評価です。未確認レンジを常に識別できるという意味ではありません。
 
 多数の同一台・同一日比較でMAE、誤差中央値、最大誤差、±25/50/100/200枚以内率を評価する作業は未実施です。
+
+## 提示済み2件の比較
+
+| 日付・台 | PScube | みんレポ | アナスロ | 絶対誤差（みんレポ/アナスロ） |
+| --- | ---: | ---: | ---: | --- |
+| 2026-09-21 / 0272 | 3256 | 3250 | 3245 | 6 / 11 |
+| 2026-10-01 / 0272 | 1393 | 1390 | 1386 | 3 / 7 |
+
+ユーザー提示値との比較で、みんレポ基準MAE=4.5枚、アナスロ基準MAE=9.0枚です。2件だけで精度保証はできません。比較サイトの自動取得は行いません。
+
+## 複数台検証CLI
+
+```powershell
+python -m jobs.validate_pscube_units `
+  --hall-url "https://yasudaya.pscube.jp/h/a744207/cgi-bin/nc-v03-001.php?cd_ps=2" `
+  --machine-name "ネオアイムジャグラーＥＸ" `
+  --date 20261001 --units 0272,0273,0274 `
+  --output "debug/pscube/validation/20261001_neoiam.csv" --annotate
+```
+
+`--units`（カンマ区切り）・`--limit`（正の整数、m03順の先頭N台）・`--all-units`のいずれか1つが必須です。未指定はusage errorとなり、デフォルト全台取得はありません。台番号はm03の対象機種に所属する文字列だけを受理し、先頭ゼロを保持します。機種名は完全一致で1件だけを選びます。16台の番号をコードへ固定しません。
+
+通常ページ→m03の全ページ→機種選択→各台の通常ページ/m06→指定日のGraph→既存estimate_graph→CSVの順です。1つのSession、REQUEST_TIMEOUT/REQUEST_INTERVAL、リトライ0で逐次実行し、並列取得は禁止です。グラフの再取得にm06を重複実行しません。
+
+`--output`の親ディレクトリを作成します。未指定時は`debug/pscube/validation/<店舗host・path・機種名のハッシュ>/YYYYMMDD_validation.csv`です。画像は同じハッシュ配下の`images/YYYYMMDD_台番号.png`、`--annotate`時だけ`annotated/`へ保存します。店舗間の衝突を避けるためハッシュで分離しています。debugはGit対象外です。
+
+CSVはUTF-8 BOM付きです。各台処理後、同じディレクトリの一時ファイルから置換して保存します。既存CSVのstatus=successはスキップし、`--force`時だけ再取得します。未成功行は再試行し、手入力のminrepo_medal/anaslo_medalを保持し、再処理行の計算済み誤差は空へ戻します。同じCSVへ異なる店舗・日付・機種を混在させません。重複台・不正な列構造はエラーになります。
+
+1台の通常失敗は記録して次台へ続けます。403/429では失敗行を保存し、その後の取得を停止します。m03で失敗した場合は全体を停止します。終了コードは全対象成功0、台単位の未成功または403/429停止2、設定・m03・CSV保存失敗1です。stdoutのJSONはprocessed/skipped/success/failure/not_processed/stopped/outputを表示します。
+
+### CSV列
+
+- 識別: hall_host、hall_path（店舗区別用の追加列）、business_date、machine_name、unit_no
+- 個別台: bb、rb、bb_probability、rb_probability、combined_probability、estimated_game、estimated_game_candidates、game_estimation_spread、max_payout
+- グラフ: estimated_medal、graph_confidence、graph_profile_top、graph_profile_bottom、graph_profile_step、graph_warnings
+- 状態: status、error_type
+- 手入力: minrepo_medal、anaslo_medal
+- 再計算: error_vs_minrepo、error_vs_anaslo、absolute_error_vs_minrepo、absolute_error_vs_anaslo
+
+欠損は空欄、candidates/warningsはJSON配列文字列です。statusはsuccess、no_daily_data、no_graph、graph_low_confidence、unit_fetch_failed、graph_fetch_failed、parse_failed、graph_processing_failedです。例外本文・Cookie・キー・Graph URLはCSVやログへ出力しません。台番号をExcelへ取り込む場合、unit_no列を文字列として指定してください。Excelの自動数値変換はCSVの先頭ゼロを落とす場合があります。
+
+### 手入力比較と再集計
+
+minrepo_medal/anaslo_medalへ同一店舗・同一台・同一日の整数差枚を入力して保存します。欠損は空欄のままにします。Excel保存時も列名・unit_noの文字列を維持してください。
+
+```powershell
+python -m jobs.evaluate_pscube_validation "debug/pscube/validation/20261001_neoiam.csv"
+```
+
+同じCSVを更新し、`estimated_medal - 比較値`とその絶対値を計算します。推定値または比較値が欠損の組は除外し、不正数値ではCSVを変更せず失敗します。
+みんレポ・アナスロ別にsample_count、mean_error、MAE、median_absolute_error、max_absolute_error、within_10/25/50/100/200_countとrateをJSONで表示します。rateは0〜100の百分率、標本0件では指標とrateはnullです。
+
+まず3台で検証してから10台へ広げます。normalize、保存DB、本番collector、OCR・推定ロジック変更は今回の対象外です。
+
+## 2026-10-02の実サイト3台検証
+
+対象日は2026-10-01。通常Sessionと既定の逐次通信でm03から対象機種16台を確認し、指定した0272/0273/0274だけを取得しました。success=3、failure=0、403/429なし。3台ともProfile B、confidence=highです。
+
+| 台番号 | estimated_game | estimated_medal |
+| --- | ---: | ---: |
+| 0272 | 6311 | 1393 |
+| 0273 | 3552 | 87 |
+| 0274 | 2993 | -373 |
+
+CSVはローカルの`debug/pscube/validation/20261001_neoiam.csv`へ保存し、3枚の原画像と注釈画像も保存しました。0272には提示済み比較値1390/1386を入力してevaluateを実行し、誤差+3/+7を確認しました。0273/0274の比較値は未入力です。これらの推定結果だけでは枚数精度を保証しません。
+
+10台検証へ進める状態です。同じCSVへ`--limit 10`を指定すれば成功済み3台をスキップし、残りだけを逐次取得します。

@@ -12,6 +12,7 @@ import re
 from PIL import Image, ImageDraw
 from collectors.pscube.client import PscubeClient
 from collectors.pscube.collector import PscubeCollector
+from collectors.pscube.models import PscubeUnitDetail
 from common.exceptions import CollectorError
 
 
@@ -54,11 +55,13 @@ def _unit(value: str) -> None:
         raise ValueError("Unit must be a digit string")
 
 
-def fetch_graph(client: PscubeClient, unit_url: str, day: date, unit: str, directory: Path) -> Path:
+def fetch_graph(client: PscubeClient, unit_url: str, day: date, unit: str, directory: Path,
+                *, detail: PscubeUnitDetail | None = None) -> Path:
     """One current unit JSON and one image, using normal Session and Referer."""
     _unit(unit)
-    detail = PscubeCollector(client).collect_unit(unit_url)
-    if detail.days[0].unit_no != unit:
+    if detail is None:
+        detail = PscubeCollector(client).collect_unit(unit_url)
+    if not detail.days or any(d.unit_no != unit for d in detail.days):
         raise CollectorError("Unit mismatch")
     matches = [g for g in detail.graphs if g.business_date == day and g.src]
     if len(matches) != 1:
